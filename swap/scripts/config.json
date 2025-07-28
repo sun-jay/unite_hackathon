@@ -1,0 +1,108 @@
+{
+  "networks": {
+    "sepolia": {
+      "name": "Ethereum Sepolia",
+      "chainId": "0xaa36a7",
+      "rpcUrl": "env:ETH_RPC_URL",
+      "privateKey": "env:ETH_WALLET_PRIVATE_KEY",
+      "confirmations": 2,
+      "timelockSeconds": 3600,
+      "blockTimeMs": 12000,
+      "gasLimit": 500000,
+      "contracts": {
+        "HTLC": {
+          "address": "0x63D1d800Cd503a56DD4cB588A36Ab7f35bdbf609",
+          "deployedBlock": 8864074
+        },
+        "TestToken": {
+          "address": "0x2aa05efaC7Ba1d60D49C2968d5FFf8Eff88AE858",
+          "name": "Test USD Token",
+          "symbol": "TUSD"
+        }
+      },
+      "explorer": {
+        "baseUrl": "https://sepolia.etherscan.io",
+        "contractUrl": "https://sepolia.etherscan.io/address/",
+        "txUrl": "https://sepolia.etherscan.io/tx/"
+      }
+    },
+    "nile": {
+      "name": "Tron Nile Testnet",
+      "chainId": "0x094a538d",
+      "rpcUrl": "env:TRON_FULLNODE",
+      "eventServer": "env:TRON_EVENTSERVER",
+      "privateKey": "env:TRON_WALLET_PRIVATE_KEY",
+      "confirmations": 19,
+      "timelockSeconds": 7200,
+      "blockTimeMs": 3000,
+      "feeLimit": 1000000000,
+      "contracts": {
+        "HTLC": {
+          "address": "414590d9a835456e315ac331a150d9cb207225c7e2",
+          "deployedBlock": 59112658
+        },
+        "TestToken": {
+          "address": "417a65ba584b65559daf72bc415af54c612f217d5d",
+          "name": "Test USD Token",
+          "symbol": "TUSD",
+          "deployedBlock": 59112658
+        }
+      },
+      "explorer": {
+        "baseUrl": "https://nile.tronscan.org",
+        "contractUrl": "https://nile.tronscan.org/#/contract/",
+        "txUrl": "https://nile.tronscan.org/#/transaction/"
+      }
+    },
+    "localhost": {
+      "name": "Local Hardhat",
+      "chainId": "0x7a69",
+      "rpcUrl": "http://127.0.0.1:8545",
+      "privateKey": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+      "confirmations": 1,
+      "timelockSeconds": 300,
+      "blockTimeMs": 1000,
+      "gasLimit": 500000,
+      "contracts": {
+        "HTLC": {
+          "address": "TBD",
+          "deployedBlock": 0
+        },
+        "TestToken": {
+          "address": "TBD",
+          "name": "Test USD Token",
+          "symbol": "TUSD"
+        }
+      }
+    }
+  },
+  "crossChain": {
+    "defaultAmountUSD": 100,
+    "secretLength": 32,
+    "hashFunction": "keccak256",
+    "safetyMargin": {
+      "timelockBuffer": 600,
+      "confirmationBuffer": 5
+    },
+    "atomicSwap": {
+      "initiatorTimelock": 7200,
+      "participantTimelock": 3600,
+      "revealWindow": 1800
+    }
+  },
+  "monitoring": {
+    "healthCheckInterval": 30000,
+    "maxRetries": 3,
+    "timeoutMs": 10000
+  },
+  "meta": {
+    "version": "1.0.0",
+    "description": "Cross-chain HTLC configuration",
+    "lastUpdated": "2025-07-28T22:00:00.000Z",
+    "supportedNetworks": [
+      "sepolia",
+      "nile",
+      "localhost"
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  tron-quickstart:
+    image: trontools/quickstart
+    ports:
+      - "9090:9090"   # FullNode HTTP
+      - "8091:8091"   # SolidityNode HTTP  
+      - "8092:8092"   # EventServer HTTP
+      - "18888:18888" # FullNode gRPC
+      - "50051:50051" # SolidityNode gRPC
+    command: [
+      "--reset",
+      "--accounts", "10"
+    ]
+    environment:
+      - JAVA_OPTS=-Xmx4g
+    volumes:
+      - tron_data:/tron/output-directory
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/wallet/getnowblock"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tron_data: 
