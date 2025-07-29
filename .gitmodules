@@ -1,3 +1,4 @@
 [submodule "packages/cross-chain-resolver-example"]
 	path = packages/cross-chain-resolver-example
 	url = https://github.com/1inch/cross-chain-resolver-example.git
+	ignore = all
