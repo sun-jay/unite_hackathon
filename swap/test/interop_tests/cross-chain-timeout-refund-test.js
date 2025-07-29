@@ -7,10 +7,10 @@ const path = require('path');
 // Load configuration
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../../scripts/config.json'), 'utf8'));
 
-// Fixed constants for deterministic testing - with unique timestamp to avoid collisions
+// Generate unique secret for each test run to avoid "Lock already exists" errors
 const SECRET_BASE = "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e";
-const TIMESTAMP = Math.floor(Date.now() / 1000).toString(16).padStart(2, '0');
-const SECRET = SECRET_BASE + TIMESTAMP.slice(-2);
+const RANDOM_SUFFIX = Math.random().toString(16).slice(2, 10); // 8 hex chars
+const SECRET = SECRET_BASE.slice(0, -8) + RANDOM_SUFFIX; // Replace last 8 chars with random
 const HASH_LOCK = ethers.keccak256(SECRET);
 
 // Contract addresses from config
@@ -187,11 +187,14 @@ async function runTimeoutRefundTest() {
     console.log('📋 DELIVERABLE C: Creating Locks with Short Timelocks');
     console.log('─'.repeat(50));
 
+    // Set timelocks AFTER accounting for deployment time
+    const deploymentBuffer = 30; // Account for deployment/confirmation time
     const now = Math.floor(Date.now() / 1000);
-    const sepoliaTimelock = now + 120; // 2 minutes (shorter)
-    const nileTimelock = now + 300;    // 5 minutes (longer)
+    const sepoliaTimelock = now + deploymentBuffer + 90;  // 1.5 minutes after deployment (shorter)
+    const nileTimelock = now + deploymentBuffer + 180;    // 3 minutes after deployment (longer)
 
     console.log(`├── Current time: ${now} (${new Date(now * 1000).toISOString()})`);
+    console.log(`├── Deployment buffer: ${deploymentBuffer} seconds`);
     console.log(`├── Sepolia timelock: ${sepoliaTimelock} (${new Date(sepoliaTimelock * 1000).toISOString()})`);
     console.log(`├── Nile timelock: ${nileTimelock} (${new Date(nileTimelock * 1000).toISOString()})`);
     console.log(`├── Difference: ${nileTimelock - sepoliaTimelock} seconds (Nile longer)`);
