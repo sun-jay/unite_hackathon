@@ -199,8 +199,4 @@ build/Release
 *.jar
 *.rar
 *.tar
-*.zip 
-
-packages/*
-packages/**/*
-packages/cross-chain-resolver-example
+*.zip
