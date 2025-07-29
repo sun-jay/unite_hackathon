@@ -8,6 +8,8 @@
     "test:tron": "tronbox test --network development",
     "test:tron:live": "node scripts/test-tron-live.js",
     "test:interop": "node test/interop_tests/cross-chain-happy-path-test.js",
+    "test:timeout": "node test/interop_tests/cross-chain-timeout-refund-test.js",
+    "test:helpers": "node test/unit/encoding-helpers.test.js",
     "config:check": "node scripts/check-config.js",
     "dev:evm": "hardhat node",
     "dev:evm:deploy": "hardhat run scripts/deploy-local.ts --network hardhat",
