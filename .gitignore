@@ -200,3 +200,7 @@ build/Release
 *.rar
 *.tar
 *.zip 
+
+packages/*
+packages/**/*
+packages/cross-chain-resolver-example
