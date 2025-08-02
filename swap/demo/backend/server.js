@@ -251,43 +251,54 @@ class CrossChainDemoServer {
       const nileDecimalsRaw = await nileToken.decimals().call();
       const nileDecimals = Number(nileDecimalsRaw);
 
-      // Realistic swap scenario: Alice (initiator) receives 1% less
-      // Alice locks 0.001 ETH tokens on Sepolia 
-      // Alice receives 0.00099 TRON tokens on Nile (1% less due to fees)
-      // Bob locks 0.001 TRON tokens on Nile
-      // Bob receives 0.001 ETH tokens on Sepolia (full amount)
-      const amountSepolia = ethers.parseUnits("0.001", sepoliaDecimals);      // Alice locks 0.001 ETH
-      const amountNileForAlice = BigInt(10) ** BigInt(Math.max(nileDecimals - 3, 0)) * BigInt(99) / BigInt(100); // Alice gets 0.00099 TRON (1% less)
-      const amountNile = BigInt(10) ** BigInt(Math.max(nileDecimals - 3, 0)); // Bob locks 0.001 TRON
+      // CONFIGURABLE AMOUNTS - Modify these values to change swap amounts
+      const SEPOLIA_AMOUNT = "0.001";  // Alice locks this amount of ETH tokens
+      const NILE_AMOUNT_DESIRED = "0.001";     // Desired amount Alice wants to receive
+      const FEE_PERCENTAGE = 1;        // Fee percentage (1% = Bob locks 1% less)
+
+      // Calculate actual amounts with proper decimals
+      const amountSepolia = ethers.parseUnits(SEPOLIA_AMOUNT, sepoliaDecimals);
+      const amountNileDesired = ethers.parseUnits(NILE_AMOUNT_DESIRED, nileDecimals);
+      
+      // Calculate Bob's lock amount (reduced by fee) - Bob locks less upfront
+      const amountNile = amountNileDesired * BigInt(100 - FEE_PERCENTAGE) / BigInt(100);
+      // Alice receives exactly what Bob locks (no further deduction)
+      const amountNileForAlice = amountNile;
 
       this.broadcast('amounts_calculated', {
         sepolia: { 
           decimals: Number(sepoliaDecimals), 
           amount: amountSepolia.toString(),
-          formatted: ethers.formatUnits(amountSepolia, sepoliaDecimals),
+          formatted: SEPOLIA_AMOUNT,
           role: "Alice locks (initiator)"
         },
         nile: { 
           decimals: nileDecimals, 
           amountLocked: amountNile.toString(),
           amountForAlice: amountNileForAlice.toString(),
-          formattedLocked: (Number(amountNile) / 10 ** nileDecimals).toString(),
-          formattedForAlice: (Number(amountNileForAlice) / 10 ** nileDecimals).toString(),
-          role: "Bob locks, Alice receives (1% fee applied)"
+          formattedLocked: ethers.formatUnits(amountNile, nileDecimals),
+          formattedForAlice: ethers.formatUnits(amountNileForAlice, nileDecimals),
+          role: "Bob locks reduced amount, Alice receives full locked amount"
         },
-        feeStructure: "Alice (initiator) pays 1% fee when withdrawing from Tron"
+        feeStructure: `Bob (responder) locks ${FEE_PERCENTAGE}% less upfront as platform fee`,
+        configuration: {
+          sepoliaAmount: SEPOLIA_AMOUNT,
+          nileAmountDesired: NILE_AMOUNT_DESIRED,
+          nileAmountActual: ethers.formatUnits(amountNile, nileDecimals),
+          feePercentage: FEE_PERCENTAGE
+        }
       });
 
       this.broadcast('swap_participants', {
         alice: {
           role: "Initiator (Ethereum user)",
-          locks: `${ethers.formatUnits(amountSepolia, sepoliaDecimals)} ETH tokens`,
-          receives: `${Number(amountNileForAlice) / 10 ** nileDecimals} TRON tokens (1% fee deducted)`
+          locks: `${SEPOLIA_AMOUNT} ETH tokens`,
+          receives: `${ethers.formatUnits(amountNileForAlice, nileDecimals)} TRON tokens (full locked amount)`
         },
         bob: {
           role: "Responder (Tron user)", 
-          locks: `${Number(amountNile) / 10 ** nileDecimals} TRON tokens`,
-          receives: `${ethers.formatUnits(amountSepolia, sepoliaDecimals)} ETH tokens (full amount)`
+          locks: `${ethers.formatUnits(amountNile, nileDecimals)} TRON tokens (${FEE_PERCENTAGE}% fee deducted upfront)`,
+          receives: `${SEPOLIA_AMOUNT} ETH tokens (full amount)`
         }
       });
 
@@ -355,27 +366,30 @@ class CrossChainDemoServer {
       // Step 5: Creating Locks
       this.broadcast('step_started', { step: 5, name: 'Creating Locks' });
 
-      const now = Math.floor(Date.now() / 1000);
-      const sepoliaTimelock = now + 3600; // 1 hour (shorter)
-      const nileTimelock = now + 7200;    // 2 hours (longer)
-
-      this.broadcast('timelocks_set', {
-        sepolia: sepoliaTimelock,
-        nile: nileTimelock,
-        sepoliaTime: new Date(sepoliaTimelock * 1000).toISOString(),
-        nileTime: new Date(nileTimelock * 1000).toISOString()
-      });
-
-      // Sepolia lock (shorter timelock)
+      // Sepolia lock (shorter timelock) - calculate timelock AFTER confirmation
       this.broadcast('creating_lock', { chain: 'sepolia' });
       const sepoliaLockTx = await sepoliaHTLC.lock(
         HASH_LOCK,
         SEPOLIA_TOKEN,
         amountSepolia,
         this.sepoliaWallet.address,
-        sepoliaTimelock
+        0 // Temporary timelock, will be set after confirmation
       );
       const sepoliaLockReceipt = await sepoliaLockTx.wait(2);
+
+      // Calculate timelock AFTER confirmation
+      const sepoliaConfirmationTime = Math.floor(Date.now() / 1000);
+      const sepoliaTimelock = sepoliaConfirmationTime + 3600; // 1 hour from confirmation
+
+      // Update the lock with proper timelock
+      const sepoliaUpdateTx = await sepoliaHTLC.lock(
+        HASH_LOCK,
+        SEPOLIA_TOKEN,
+        amountSepolia,
+        this.sepoliaWallet.address,
+        sepoliaTimelock
+      );
+      await sepoliaUpdateTx.wait(2);
 
       // Check Sepolia lock
       const sepoliaLockedEvent = sepoliaLockReceipt.logs.find(
@@ -396,12 +410,29 @@ class CrossChainDemoServer {
       this.broadcast('lock_created', {
         chain: 'sepolia',
         txHash: sepoliaLockTx.hash,
-        explorerUrl: `${this.config.networks.sepolia.explorer.txUrl}${sepoliaLockTx.hash}`
+        explorerUrl: `${this.config.networks.sepolia.explorer.txUrl}${sepoliaLockTx.hash}`,
+        timelock: sepoliaTimelock,
+        confirmedAt: sepoliaConfirmationTime
       });
 
-      // Nile lock (longer timelock)
+      // Nile lock (longer timelock) - calculate timelock AFTER confirmation
       this.broadcast('creating_lock', { chain: 'nile' });
       const nileLockTx = await nileHTLC.lock(
+        HASH_LOCK,
+        NILE_TOKEN,
+        amountNile,
+        this.nileWallet,
+        0 // Temporary timelock, will be set after confirmation
+      ).send();
+
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait for confirmations
+
+      // Calculate timelock AFTER confirmation
+      const nileConfirmationTime = Math.floor(Date.now() / 1000);
+      const nileTimelock = nileConfirmationTime + 7200; // 2 hours from confirmation
+
+      // Update the lock with proper timelock
+      await nileHTLC.lock(
         HASH_LOCK,
         NILE_TOKEN,
         amountNile,
@@ -409,7 +440,7 @@ class CrossChainDemoServer {
         nileTimelock
       ).send();
 
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait for confirmations
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
       // Check Nile lock
       const nileLockData = await nileHTLC.getLock(HASH_LOCK).call();
@@ -420,7 +451,18 @@ class CrossChainDemoServer {
       this.broadcast('lock_created', {
         chain: 'nile',
         txHash: nileLockTx,
-        explorerUrl: `${this.config.networks.nile.explorer.txUrl}${nileLockTx}`
+        explorerUrl: `${this.config.networks.nile.explorer.txUrl}${nileLockTx}`,
+        timelock: nileTimelock,
+        confirmedAt: nileConfirmationTime
+      });
+
+      this.broadcast('timelocks_set', {
+        sepolia: sepoliaTimelock,
+        nile: nileTimelock,
+        sepoliaTime: new Date(sepoliaTimelock * 1000).toISOString(),
+        nileTime: new Date(nileTimelock * 1000).toISOString(),
+        sepoliaConfirmedAt: sepoliaConfirmationTime,
+        nileConfirmedAt: nileConfirmationTime
       });
 
       // Step 6: Withdraw on Nile (Reveal Secret)
@@ -624,29 +666,20 @@ class CrossChainDemoServer {
       // Step 5: Creating Locks
       this.broadcast('step_started', { step: 5, name: 'Creating Locks (Mock)' });
 
-      const now = Math.floor(Date.now() / 1000);
-      const sepoliaTimelock = now + 300; // 5 minutes for demo
-      const nileTimelock = now + 600;    // 10 minutes for demo
-
-      this.broadcast('timelocks_set', {
-        sepolia: sepoliaTimelock,
-        nile: nileTimelock,
-        sepoliaTime: new Date(sepoliaTimelock * 1000).toISOString(),
-        nileTime: new Date(nileTimelock * 1000).toISOString(),
-        mockMode: true
-      });
-
       // Sepolia lock
       await this.delay(1500);
       this.broadcast('creating_lock', { chain: 'sepolia', mockMode: true });
       
       await this.delay(2000);
+      const sepoliaConfirmationTime = Math.floor(Date.now() / 1000);
+      const sepoliaTimelock = sepoliaConfirmationTime + 300; // 5 minutes from confirmation
+      
       this.broadcast('lock_created', {
         chain: 'sepolia',
         txHash: '0xlock1234...mockSepoliaLock',
         explorerUrl: 'https://sepolia.etherscan.io/tx/0xlock1234...mockSepoliaLock',
         timelock: sepoliaTimelock,
-        actualLockTime: now + 2, // Simulate small delay from tx creation to mining
+        confirmedAt: sepoliaConfirmationTime,
         mockMode: true
       });
 
@@ -655,12 +688,25 @@ class CrossChainDemoServer {
       this.broadcast('creating_lock', { chain: 'nile', mockMode: true });
       
       await this.delay(2000);
+      const nileConfirmationTime = Math.floor(Date.now() / 1000);
+      const nileTimelock = nileConfirmationTime + 600; // 10 minutes from confirmation
+      
       this.broadcast('lock_created', {
         chain: 'nile',
         txHash: 'nilelock5678...mockNileLock',
         explorerUrl: 'https://nile.tronscan.org/#/transaction/nilelock5678...mockNileLock',
         timelock: nileTimelock,
-        actualLockTime: now + 4, // Simulate small delay
+        confirmedAt: nileConfirmationTime,
+        mockMode: true
+      });
+
+      this.broadcast('timelocks_set', {
+        sepolia: sepoliaTimelock,
+        nile: nileTimelock,
+        sepoliaTime: new Date(sepoliaTimelock * 1000).toISOString(),
+        nileTime: new Date(nileTimelock * 1000).toISOString(),
+        sepoliaConfirmedAt: sepoliaConfirmationTime,
+        nileConfirmedAt: nileConfirmationTime,
         mockMode: true
       });
 
