@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const [hashLock, setHashLock] = useState<string>('')
   const [secretRevealed, setSecretRevealed] = useState(false)
   const [mockMode, setMockMode] = useState(false)
+  const [bobInitiates, setBobInitiates] = useState(false)
 
   const [chainStates, setChainStates] = useState<{[key: string]: ChainState}>({
     sepolia: {
@@ -148,7 +149,8 @@ export default function DashboardPage() {
       case 'test_started':
         setRunning(true)
         setProgress(0)
-        setCurrentStep('Initializing...')
+        const isReversed = message.data.reversedFlow || false
+        setCurrentStep(isReversed ? 'Initializing Reversed Swap...' : 'Initializing...')
         setTransactions({})
         setSecret('')
         setHashLock('')
@@ -168,36 +170,70 @@ export default function DashboardPage() {
         break
 
       case 'amounts_calculated':
-        setCurrentStep('Token Amounts Calculated')
+        const isReversedAmounts = message.data.reversedFlow || false
+        setCurrentStep(isReversedAmounts ? 'Token Amounts Calculated (Reversed)' : 'Token Amounts Calculated')
         setProgress(25)
-        // Update amounts with new backend structure
-        setChainStates(prev => ({
-          sepolia: { 
-            ...prev.sepolia, 
-            amount: message.data.sepolia?.formatted || null,
-            role: message.data.sepolia?.role || null
-          },
-          nile: { 
-            ...prev.nile, 
-            amount: message.data.nile?.formattedForAlice || message.data.nile?.formatted || null,
-            amountLocked: message.data.nile?.formattedLocked || null,
-            role: message.data.nile?.role || null
-          }
-        }))
+        
+        if (isReversedAmounts) {
+          // In reversed flow: different amount structure
+          setChainStates(prev => ({
+            sepolia: { 
+              ...prev.sepolia, 
+              amount: message.data.sepolia?.formattedLocked || message.data.sepolia?.formatted || null,
+              role: message.data.sepolia?.role || null
+            },
+            nile: { 
+              ...prev.nile, 
+              amount: message.data.nile?.formatted || null,
+              role: message.data.nile?.role || null
+            }
+          }))
+        } else {
+          // Normal flow: original structure
+          setChainStates(prev => ({
+            sepolia: { 
+              ...prev.sepolia, 
+              amount: message.data.sepolia?.formatted || null,
+              role: message.data.sepolia?.role || null
+            },
+            nile: { 
+              ...prev.nile, 
+              amount: message.data.nile?.formattedForAlice || message.data.nile?.formatted || null,
+              amountLocked: message.data.nile?.formattedLocked || null,
+              role: message.data.nile?.role || null
+            }
+          }))
+        }
         break
 
       case 'swap_participants':
         // Handle the new swap participants info
-        setChainStates(prev => ({
-          sepolia: { 
-            ...prev.sepolia, 
-            participantInfo: message.data.bob || null
-          },
-          nile: { 
-            ...prev.nile, 
-            participantInfo: message.data.alice || null
-          }
-        }))
+        const isReversedParticipants = message.data.reversedFlow || false
+        if (isReversedParticipants) {
+          // In reversed flow: Bob is on Nile (initiator), Alice is on Sepolia (responder)
+          setChainStates(prev => ({
+            sepolia: { 
+              ...prev.sepolia, 
+              participantInfo: message.data.alice || null
+            },
+            nile: { 
+              ...prev.nile, 
+              participantInfo: message.data.bob || null
+            }
+          }))
+        } else {
+          // In normal flow: Alice is on Sepolia (initiator), Bob is on Nile (responder)
+          setChainStates(prev => ({
+            sepolia: { 
+              ...prev.sepolia, 
+              participantInfo: message.data.bob || null
+            },
+            nile: { 
+              ...prev.nile, 
+              participantInfo: message.data.alice || null
+            }
+          }))
+        }
         break
 
       case 'balances_checked':
@@ -217,7 +253,8 @@ export default function DashboardPage() {
 
       case 'lock_created':
         const lockChain = message.data.chain === 'sepolia' ? 'sepolia' : 'nile'
-        setCurrentStep(`${message.data.chain} Lock Created`)
+        const isReversedLock = message.data.reversedFlow || false
+        setCurrentStep(`${message.data.chain} Lock Created${isReversedLock ? ' (Reversed)' : ''}`)
         setProgress(prev => prev + 20)
         
         setChainStates(prev => ({
@@ -244,7 +281,8 @@ export default function DashboardPage() {
 
       case 'withdrawal_completed':
         const withdrawChain = message.data.chain === 'sepolia' ? 'sepolia' : 'nile'
-        setCurrentStep(`${message.data.chain} Withdrawal Complete`)
+        const isReversedWithdraw = message.data.reversedFlow || false
+        setCurrentStep(`${message.data.chain} Withdrawal Complete${isReversedWithdraw ? ' (Reversed)' : ''}`)
         setProgress(prev => prev + 20)
         
         if (message.data.secretRevealed) {
@@ -270,7 +308,8 @@ export default function DashboardPage() {
       case 'test_completed':
         setRunning(false)
         setProgress(100)
-        setCurrentStep('Cross-Chain Swap Completed!')
+        const isReversedCompleted = message.data.reversedFlow || false
+        setCurrentStep(isReversedCompleted ? 'Reversed Cross-Chain Swap Completed!' : 'Cross-Chain Swap Completed!')
         break
 
       case 'test_failed':
@@ -290,7 +329,7 @@ export default function DashboardPage() {
       const response = await fetch('http://localhost:8080/start-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mockMode })
+        body: JSON.stringify({ mockMode, bobInitiates })
       })
       
       if (!response.ok) {
@@ -519,15 +558,38 @@ export default function DashboardPage() {
                 >
                   🎭 {mockMode ? 'MOCK' : 'LIVE'}
                 </button>
+                
+                <button
+                  onClick={() => setBobInitiates(!bobInitiates)}
+                  disabled={running}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    bobInitiates 
+                      ? 'bg-orange-100 text-orange-800 border border-orange-300' 
+                      : 'bg-blue-100 text-blue-800 border border-blue-300'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  🔄 {bobInitiates ? 'BOB→ALICE' : 'ALICE→BOB'}
+                </button>
               </div>
+              
+              <a
+                href="/events"
+                className="px-3 py-1 rounded text-sm font-medium text-gray-600 hover:text-gray-800 border border-gray-300 hover:border-gray-400 transition-colors"
+              >
+                🔄 Events Monitor
+              </a>
               
               <button
                 onClick={startTest}
                 disabled={!connected || running}
-                className="btn-primary flex items-center space-x-2"
+                className={`font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 ${
+                  bobInitiates 
+                    ? 'bg-orange-600 hover:bg-orange-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                }`}
               >
                 <Play className="w-4 h-4" />
-                <span>Start Swap Test</span>
+                <span>{bobInitiates ? 'Start Reversed Swap' : 'Start Normal Swap'}</span>
               </button>
               
               <button
@@ -544,6 +606,39 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Swap Mode Indicator */}
+        <div className="mb-6 bg-white rounded-lg shadow-sm border p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className={`px-4 py-2 rounded-lg ${
+                bobInitiates ? 'bg-orange-50 border border-orange-200' : 'bg-blue-50 border border-blue-200'
+              }`}>
+                <h3 className={`font-semibold ${
+                  bobInitiates ? 'text-orange-900' : 'text-blue-900'
+                }`}>
+                  {bobInitiates ? '🔄 Reversed Swap Mode' : '➡️ Normal Swap Mode'}
+                </h3>
+                <p className={`text-sm ${
+                  bobInitiates ? 'text-orange-700' : 'text-blue-700'
+                }`}>
+                  {bobInitiates 
+                    ? 'Bob (TRON) initiates → Alice (ETH) responds'
+                    : 'Alice (ETH) initiates → Bob (TRON) responds'
+                  }
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm text-gray-600">
+                {bobInitiates ? 'Bob locks first (1h), Alice locks second (2h)' : 'Alice locks first (1h), Bob locks second (2h)'}
+              </div>
+              {/* <div className="text-xs text-gray-500 mt-1">
+                {bobInitiates ? 'Bob reveals secret on Sepolia first' : 'Alice reveals secret on Nile first'}
+              </div> */}
+            </div>
+          </div>
+        </div>
+
         {/* Progress and Status */}
         <div className="mb-8 bg-white rounded-lg shadow-sm border p-6">
           <div className="flex justify-between items-center mb-4">
@@ -582,14 +677,19 @@ export default function DashboardPage() {
         {/* Visual Flow Indicator - Above Split View */}
         {(chainStates.sepolia.lockCreated || chainStates.nile.lockCreated) && (
           <div className="mb-8 bg-white rounded-lg shadow-sm border p-6">
-            <h3 className="text-lg font-semibold mb-4">Swap Flow Status</h3>
+            <h3 className="text-lg font-semibold mb-4">
+              Swap Flow Status {bobInitiates ? '(Reversed)' : '(Normal)'}
+            </h3>
             <div className="flex items-center justify-center space-x-4">
+              {/* First Lock (varies by mode) */}
               <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-                chainStates.sepolia.lockCreated ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                bobInitiates 
+                  ? (chainStates.nile.lockCreated ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600')
+                  : (chainStates.sepolia.lockCreated ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600')
               }`}>
-                <span className="text-2xl">⟠</span>
-                <span>Sepolia Lock</span>
-                {chainStates.sepolia.lockCreated && <CheckCircle className="w-5 h-5" />}
+                <span className="text-2xl">{bobInitiates ? '◆' : '⟠'}</span>
+                <span>{bobInitiates ? 'Tron Lock (1st)' : 'Sepolia Lock (1st)'}</span>
+                {(bobInitiates ? chainStates.nile.lockCreated : chainStates.sepolia.lockCreated) && <CheckCircle className="w-5 h-5" />}
               </div>
               
               <div className="flex-1 h-1 bg-gradient-to-r from-blue-300 to-red-300 rounded"></div>
@@ -604,12 +704,27 @@ export default function DashboardPage() {
               
               <div className="flex-1 h-1 bg-gradient-to-r from-red-300 to-blue-300 rounded"></div>
               
+              {/* Second Lock (varies by mode) */}
               <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-                chainStates.nile.lockCreated ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                bobInitiates 
+                  ? (chainStates.sepolia.lockCreated ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600')
+                  : (chainStates.nile.lockCreated ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600')
               }`}>
-                <span className="text-2xl">◆</span>
-                <span>Tron Lock</span>
-                {chainStates.nile.lockCreated && <CheckCircle className="w-5 h-5" />}
+                <span className="text-2xl">{bobInitiates ? '⟠' : '◆'}</span>
+                <span>{bobInitiates ? 'Sepolia Lock (2nd)' : 'Tron Lock (2nd)'}</span>
+                {(bobInitiates ? chainStates.sepolia.lockCreated : chainStates.nile.lockCreated) && <CheckCircle className="w-5 h-5" />}
+              </div>
+            </div>
+            
+            {/* Role indicators */}
+            <div className="mt-4 flex justify-center space-x-8 text-sm text-gray-600">
+              <div className="text-center">
+                <div className="font-medium">{bobInitiates ? 'Bob initiates' : 'Alice initiates'}</div>
+                <div className="text-xs">{bobInitiates ? 'Locks TRON first' : 'Locks ETH first'}</div>
+              </div>
+              <div className="text-center">
+                <div className="font-medium">{bobInitiates ? 'Alice responds' : 'Bob responds'}</div>
+                <div className="text-xs">{bobInitiates ? 'Locks ETH second' : 'Locks TRON second'}</div>
               </div>
             </div>
           </div>
