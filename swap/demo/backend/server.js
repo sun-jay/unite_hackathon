@@ -7,6 +7,7 @@ const { ethers } = require('ethers');
 const TronWeb = require('tronweb');
 const fs = require('fs');
 const path = require('path');
+const ReversedSwapHandler = require('./reversedSwap');
 
 class CrossChainDemoServer {
   constructor() {
@@ -80,25 +81,68 @@ class CrossChainDemoServer {
       try {
         this.isRunning = true;
         const mockMode = req.body.mockMode || this.mockMode;
-        res.json({ success: true, message: `Cross-chain test started (${mockMode ? 'MOCK' : 'LIVE'} mode)` });
+        const bobInitiates = req.body.bobInitiates || false;
+        
+        const modeText = mockMode ? 'MOCK' : 'LIVE';
+        const flowText = bobInitiates ? 'REVERSED' : 'NORMAL';
+        res.json({ success: true, message: `Cross-chain test started (${modeText} ${flowText} mode)` });
         
         // Start the test in background
-        if (mockMode) {
-          this.runMockTest().catch(error => {
-            this.broadcast('test_failed', { message: error.message });
-            this.isRunning = false;
-          });
+        if (bobInitiates) {
+          // Use new reversed swap handler
+          const reversedHandler = new ReversedSwapHandler(
+            this.sepoliaProvider,
+            this.sepoliaWallet,
+            this.tronWeb,
+            this.nileWallet,
+            this.config,
+            this.broadcast.bind(this)
+          );
+          
+          if (mockMode) {
+            reversedHandler.runReversedMockTest().then(() => {
+              this.isRunning = false;
+            }).catch(error => {
+              this.broadcast('test_failed', { message: error.message });
+              this.isRunning = false;
+            });
+          } else {
+            reversedHandler.runReversedCrossChainTest().then(() => {
+              this.isRunning = false;
+            }).catch(error => {
+              this.broadcast('test_failed', { message: error.message });
+              this.isRunning = false;
+            });
+          }
         } else {
-          this.runCrossChainTest().catch(error => {
-            this.broadcast('test_failed', { message: error.message });
-            this.isRunning = false;
-          });
+          // Use existing normal swap logic
+          if (mockMode) {
+            this.runMockTest().catch(error => {
+              this.broadcast('test_failed', { message: error.message });
+              this.isRunning = false;
+            });
+          } else {
+            this.runCrossChainTest().catch(error => {
+              this.broadcast('test_failed', { message: error.message });
+              this.isRunning = false;
+            });
+          }
         }
         
       } catch (error) {
         this.isRunning = false;
         res.status(500).json({ error: error.message });
       }
+    });
+
+    this.app.post('/stop-test', (req, res) => {
+      if (!this.isRunning) {
+        return res.status(400).json({ error: 'No test is currently running' });
+      }
+      
+      this.isRunning = false;
+      this.broadcast('stopped', { message: 'Test stopped by user' });
+      res.json({ success: true, message: 'Test stopped successfully' });
     });
 
     this.app.post('/toggle-mock', (req, res) => {
