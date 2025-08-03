@@ -22,7 +22,7 @@ import {ImmutablesLib} from "../lib/cross-chain-swap/contracts/libraries/Immutab
  * transaction, since the address of the escrow depends on the block.timestamp.
  * You can find sample code for this in the {ResolverExample-deploySrc}.
  *
- * @custom:security-contact security@1inch.io
+ * @custom:security-contact security@1inch.i
  */
 contract Resolver is Ownable {
     using ImmutablesLib for IBaseEscrow.Immutables;
